@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>warmot</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── Query bar (shared across all tabs) ──────────────────────────── -->
+    <header id="query-bar">
+      <span class="app-title">warmot</span>
+
+      <div class="query-group">
+        <label>Lon <input type="number" id="q-lon" step="0.001" value="174.77" /></label>
+        <label>Lat <input type="number" id="q-lat" step="0.001" value="-41.29" /></label>
+        <label>Radius° <input type="number" id="q-radius" step="0.01" value="0.05" /></label>
+      </div>
+
+      <div class="query-group">
+        <label>From <input type="date" id="q-from" value="2025-01-01" /></label>
+        <label>To   <input type="date" id="q-to"   value="2025-04-01" /></label>
+      </div>
+
+      <button id="btn-apply">Apply</button>
+    </header>
+
+    <!-- ── Tab bar ─────────────────────────────────────────────────────── -->
+    <nav id="tab-bar">
+      <button class="tab-btn active" data-tab="sentinel2">Sentinel-2 Optical</button>
+      <button class="tab-btn"        data-tab="sentinel1">Sentinel-1 SAR</button>
+      <button class="tab-btn"        data-tab="weather">Weather</button>
+      <button class="tab-btn"        data-tab="ais">AIS Shipping</button>
+    </nav>
+
+    <!-- ── Tab panels ──────────────────────────────────────────────────── -->
+    <main id="panels">
+      <section id="panel-sentinel2" class="panel active"></section>
+      <section id="panel-sentinel1" class="panel"></section>
+      <section id="panel-weather"   class="panel"></section>
+      <section id="panel-ais"       class="panel"></section>
+    </main>
+
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

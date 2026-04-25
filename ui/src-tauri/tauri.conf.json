@@ -1,0 +1,21 @@
+{
+  "productName": "warmot",
+  "version": "0.1.0",
+  "identifier": "nz.warmot.app",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "warmot – sensor viewer",
+        "width": 1400,
+        "height": 900,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  }
+}
