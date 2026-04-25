@@ -1,0 +1,13 @@
+[package]
+name = "warmot-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "warmot"
+path = "src/main.rs"
+
+[dependencies]
+warmot-core = { path = "../core" }
+tokio       = { version = "1", features = ["full"] }
+dotenvy     = "0.15"

@@ -1,19 +1,13 @@
-[package]
-name = "warmot"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = [
+    "core",
+    "cli",
+    "ui/src-tauri",
+]
+resolver = "2"
 
-[dependencies]
-aws-config         = "1"
-aws-credential-types = "1"
-aws-sdk-s3         = "1"
-bytes              = "1"
-dotenvy = "0.15.7"
-reqwest            = { version = "0.12", features = ["json"] }
-serde              = { version = "1", features = ["derive"] }
-serde_json         = "1"
-thiserror          = "1"
-tokio              = { version = "1", features = ["full"] }
-hayro-jpeg2000 = { version = "0.3", features = ["image"] }
-image          = "0.25"
-
+# Shared dependency versions across all crates
+[workspace.dependencies]
+tokio   = { version = "1", features = ["full"] }
+serde   = { version = "1", features = ["derive"] }
+dotenvy = "0.15"

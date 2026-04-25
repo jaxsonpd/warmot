@@ -106,14 +106,15 @@ pub fn decode_to_image(jp2_bytes: &[u8]) -> Result<DynamicImage> {
 fn decode_jp2(bytes: &[u8]) -> Result<DynamicImage> {
     // hayro's Image implements ImageDecoder; from_decoder drives it into a DynamicImage.
     let decoder = Image::new(bytes, &DecodeSettings::default())
-        .map_err(|e| Error::Decode(e.to_string()))?;
+            .map_err(|e: hayro_jpeg2000::DecodeError| Error::Decode(e.to_string()))?;
 
     let color_type = decoder.color_type();
     let (width, height) = decoder.dimensions();
     let mut buf = vec![0u8; (width * height * color_type.channel_count() as u32) as usize];
     decoder
         .read_image(&mut buf)
-        .map_err(|e| Error::Decode(e.to_string()))?;
+        .map_err(|e: image::ImageError| Error::Decode(e.to_string()))?;
+
 
     // Reconstruct a DynamicImage from the raw 8-bit buffer.
     // hayro always outputs 8-bit (L8, La8, Rgb8, or Rgba8).
