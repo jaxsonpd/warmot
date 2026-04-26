@@ -19,6 +19,7 @@ struct QueryUpdate {
 /// Called by the frontend whenever the location/time form changes.
 #[tauri::command]
 fn update_query(state: State<'_, AppState>, params: QueryUpdate) -> Result<(), String> {
+    println!("update_query");
     let mut q = state.query.lock().unwrap();
     q.lon = params.lon;
     q.lat = params.lat;
@@ -30,6 +31,7 @@ fn update_query(state: State<'_, AppState>, params: QueryUpdate) -> Result<(), S
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    dotenvy::dotenv().ok();    
     tauri::Builder::default()
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![

@@ -4,6 +4,7 @@ use warmot::copernicus::{
     BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy,
 };
 use warmot::jp2_convert::convert_bytes;
+use std::env;
 
 use crate::state::AppState;
 
@@ -26,9 +27,15 @@ pub async fn fetch_sentinel2(
 ) -> Result<Vec<S2Scene>, String> {
     let query = state.query.lock().unwrap().clone();
 
-    let client = CopernicusClient::init(&username, &password, &s3_access, &s3_secret)
-        .await
-        .map_err(|e| e.to_string())?;
+    // ── 1. init ───────────────────────────────────────────────────────────────
+    let client = CopernicusClient::init(
+        &env::var("CDSE_USERNAME").unwrap(),
+        &env::var("CDSE_PASSWORD").unwrap(),
+        &env::var("CDSE_S3_ACCESS").unwrap(),
+        &env::var("CDSE_S3_SECRET").unwrap(),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
 
     let bbox = BoundingBox::around(query.lon, query.lat, query.radius_deg);
 

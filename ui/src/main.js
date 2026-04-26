@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+const { invoke } = window.__TAURI__.core;
 import { initSentinel2Tab } from './tabs/sentinel2.js';
 import { initSentinel1Tab } from './tabs/sentinel1.js';
 import { initWeatherTab }   from './tabs/weather.js';
@@ -29,10 +29,16 @@ async function applyQuery() {
 
 document.getElementById('btn-apply').addEventListener('click', applyQuery);
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-await applyQuery(); // seed Rust state with defaults on load
+// Boot
+(async () => {
+  try {
+    await applyQuery();
+  } catch (e) {
+    console.error('applyQuery failed on boot:', e);
+  }
 
-initSentinel2Tab(invoke);
-initSentinel1Tab();
-initWeatherTab();
-initAisTab();
+  initSentinel2Tab(invoke);
+  initSentinel1Tab();
+  initWeatherTab();
+  initAisTab();
+})();
