@@ -1,4 +1,4 @@
-const { invoke } = window.__TAURI__.core;
+import { invoke } from '@tauri-apps/api/core'
 import { initSentinel2Tab } from './tabs/sentinel2.js';
 import { initSentinel1Tab } from './tabs/sentinel1.js';
 import { initWeatherTab }   from './tabs/weather.js';

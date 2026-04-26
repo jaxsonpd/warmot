@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>warmot</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="./src/style.css" />
 </head>
 <body>
   <div id="app">
@@ -43,9 +43,21 @@
       <section id="panel-ais"       class="panel"></section>
     </main>
 
+    <!-- ── Log panel ──────────────────────────────────────────────────── -->
+    <footer id="log">
+        <div id="log-toolbar">
+            <span class="log-label">log</span>
+            <button class="log-filter-btn active" data-level="all">all</button>
+            <button class="log-filter-btn" data-level="info">info</button>
+            <button class="log-filter-btn" data-level="warn">warn</button>
+            <button class="log-filter-btn" data-level="error">error</button>
+            <button id="log-clear">clear</button>
+        </div>
+        <div id="log-entries"></div>
+    </footer>
+
   </div>
 
-  <script src="/tauri.js"></script>
-  <script type="module" src="main.js"></script>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

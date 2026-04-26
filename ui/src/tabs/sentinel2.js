@@ -1,3 +1,5 @@
+import { info } from '../scripts/log'
+
 export function initSentinel2Tab(invoke) {
   const panel  = document.getElementById('panel-sentinel2');
 
@@ -14,6 +16,8 @@ export function initSentinel2Tab(invoke) {
   const grid   = document.getElementById('s2-grid');
 
   btn.addEventListener('click', async () => {
+    info("Starting data fetch", "sentinel2");
+    
     btn.disabled = true;
     status.className = 'status';
     status.innerHTML = '<span class="spinner"></span> Fetching…';
