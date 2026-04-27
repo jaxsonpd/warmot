@@ -22,8 +22,8 @@ impl Default for AppState {
                 lon: 174.77,
                 lat: -41.29,
                 radius_deg: 0.05,
-                date_from: "2025-01-01".into(),
-                date_to: "2025-04-01".into(),
+                date_from: "2026-03-01".into(),
+                date_to: "2026-03-10".into(),
             }),
         }
     }

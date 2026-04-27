@@ -3,7 +3,7 @@ use tauri::State;
 use warmot::copernicus::{
     BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy,
 };
-use warmot::jp2_convert::convert_bytes;
+use warmot::jp2_convert::{convert_bytes, convert_bytes_with_speed, PngSpeed};
 use std::env;
 
 use crate::state::AppState;
@@ -27,6 +27,8 @@ pub async fn fetch_sentinel2(
 ) -> Result<Vec<S2Scene>, String> {
     let query = state.query.lock().unwrap().clone();
 
+    log::info!("Searching sentinel2 using {:?}", query);
+
     // ── 1. init ───────────────────────────────────────────────────────────────
     let client = CopernicusClient::init(
         &env::var("CDSE_USERNAME").unwrap(),
@@ -39,6 +41,8 @@ pub async fn fetch_sentinel2(
 
     let bbox = BoundingBox::around(query.lon, query.lat, query.radius_deg);
 
+    log::debug!("Searching for BoundingBox {:?}", bbox);
+
     let scenes = client
         .search(SearchParams {
             collection: CollectionType::Sentinel2L2A,
@@ -50,15 +54,19 @@ pub async fn fetch_sentinel2(
         .await
         .map_err(|e| e.to_string())?;
 
+    log::debug!("Found scenes {:?}", scenes);
+
     let mut results = Vec::new();
 
     for scene in &scenes {
+        log::debug!("Fetching {:?}", scene);
         let asset = client
             .get_image_fallback(scene, &["TCI_10m", "TCI", "visual"])
             .await
             .map_err(|e| e.to_string())?;
 
-        let png = convert_bytes(&asset.bytes).map_err(|e| e.to_string())?;
+        log::debug!("Converting to png");
+        let png = convert_bytes_with_speed(&asset.bytes, PngSpeed::Fast).map_err(|e| e.to_string())?;
         let png_b64 = base64_encode(&png);
 
         results.push(S2Scene {

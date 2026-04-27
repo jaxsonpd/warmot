@@ -23,5 +23,14 @@ aws-credential-types = "1"
 thiserror            = "1"      
 bytes                = "1"   
 dotenvy              = "0.15"
-hayro-jpeg2000 = { version = "0.3", features = ["image"] }
+hayro-jpeg2000       = { version = "0.3", features = ["image"] }
 image                = { version = "0.25", default-features = false, features = ["png"] }
+png                  = "0.17" 
+
+[features]
+default  = []
+parallel = ["dep:rayon"]
+
+[dependencies.rayon]
+version  = "1"
+optional = true

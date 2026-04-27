@@ -7,7 +7,7 @@ use state::AppState;
 use tauri::State;
 use serde::Deserialize;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct QueryUpdate {
     lon: f64,
     lat: f64,
@@ -19,7 +19,7 @@ struct QueryUpdate {
 /// Called by the frontend whenever the location/time form changes.
 #[tauri::command]
 fn update_query(state: State<'_, AppState>, params: QueryUpdate) -> Result<(), String> {
-    println!("update_query");
+    log::info!("Updating query with {:?}", params);
     let mut q = state.query.lock().unwrap();
     q.lon = params.lon;
     q.lat = params.lat;
@@ -32,6 +32,8 @@ fn update_query(state: State<'_, AppState>, params: QueryUpdate) -> Result<(), S
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     dotenvy::dotenv().ok();    
+    env_logger::init();
+
     tauri::Builder::default()
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![

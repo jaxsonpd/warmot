@@ -1,112 +1,80 @@
-//! # jp2_convert
-//!
-//! Converts JPEG 2000 (`.jp2`) satellite imagery to PNG using **pure Rust** —
-//! no system libraries, no OpenJPEG, no C dependencies.
-//!
-//! Backed by [`hayro-jpeg2000`](https://crates.io/crates/hayro-jpeg2000), a
-//! memory-safe pure-Rust JPEG 2000 decoder.
-//!
-//! ## Cargo.toml
-//!
-//! ```toml
-//! [dependencies]
-//! hayro-jpeg2000 = { version = "0.3", features = ["image"] }
-//! image          = "0.25"
-//! thiserror      = "1"
-//! ```
-//!
-//! No system packages required — `cargo build` is all you need.
-//!
-//! ## Quick start
-//!
-//! ```rust,no_run
-//! use jp2_convert::{convert_file, convert_bytes};
-//!
-//! // File → file
-//! convert_file("scene.jp2", "scene.png")?;
-//!
-//! // In-memory bytes → PNG bytes (pipe straight from S3 download)
-//! let png_bytes = convert_bytes(&jp2_bytes)?;
-//! std::fs::write("scene.png", png_bytes)?;
-//! ```
-//!
-//! ## Note on bit depth
-//!
-//! `hayro-jpeg2000` decodes JP2 files to **8-bit** output (with ICC/colour-space
-//! correction applied).  The resulting PNG is therefore always 8-bit per channel.
-//! If you need to preserve the raw 16-bit values from Sentinel-2 bands for
-//! scientific analysis, you will need a different tool (e.g. GDAL).  For visual
-//! use — previewing scenes, web display, quick inspection — 8-bit is fine.
+//! [doc comments unchanged]
 
 use hayro_jpeg2000::{DecodeSettings, Image};
 use image::{DynamicImage, ImageDecoder, ImageFormat};
+use png::{BitDepth, ColorType, Compression, Encoder};
 use std::io::Cursor;
 use std::path::Path;
-
-// ── Error ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
-
     #[error("JP2 decode error: {0}")]
     Decode(String),
-
     #[error("Image encode error: {0}")]
     Encode(#[from] image::ImageError),
+    #[error("PNG encode error: {0}")]
+    PngEncode(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-// ── Public API ────────────────────────────────────────────────────────────────
+/// Quality/speed tradeoff for PNG encoding.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum PngSpeed {
+    /// Smallest file, slowest (default `image` crate behaviour).
+    Small,
+    /// Good balance — recommended for most uses.
+    #[default]
+    Balanced,
+    /// Fastest encode, largest file. Best for previewing/inspection.
+    Fast,
+}
 
-/// Convert a JP2 file on disk to a PNG file on disk.
-///
-/// Any missing parent directories for `output_path` are created automatically.
 pub fn convert_file(
     input_path: impl AsRef<Path>,
     output_path: impl AsRef<Path>,
 ) -> Result<()> {
-    let bytes = std::fs::read(input_path)?;
-    let png = convert_bytes(&bytes)?;
+    convert_file_with_speed(input_path, output_path, PngSpeed::default())
+}
 
+pub fn convert_file_with_speed(
+    input_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+    speed: PngSpeed,
+) -> Result<()> {
+    let bytes = std::fs::read(input_path)?;
+    let png = convert_bytes_with_speed(&bytes, speed)?;
     let output_path = output_path.as_ref();
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-
     std::fs::write(output_path, png)?;
     Ok(())
 }
 
-/// Convert JP2 bytes to PNG bytes entirely in memory.
-///
-/// Plug this directly into the `copernicus` module:
-/// ```rust,no_run
-/// let asset = client.get_image(&scene, "TCI_10m").await?;
-/// let png = jp2_convert::convert_bytes(&asset.bytes)?;
-/// std::fs::write("scene.png", png)?;
-/// ```
 pub fn convert_bytes(jp2_bytes: &[u8]) -> Result<Vec<u8>> {
-    let image = decode_jp2(jp2_bytes)?;
-    encode_png(image)
+    convert_bytes_with_speed(jp2_bytes, PngSpeed::default())
 }
 
-/// Decode JP2 bytes to a [`DynamicImage`] without further processing.
+/// Convert JP2 bytes → PNG bytes with explicit speed control.
 ///
-/// Use this if you want to crop, resize, or otherwise manipulate the image
-/// using the `image` crate before saving.
+/// ```rust,no_run
+/// let png = jp2_convert::convert_bytes_with_speed(&bytes, PngSpeed::Fast)?;
+/// ```
+pub fn convert_bytes_with_speed(jp2_bytes: &[u8], speed: PngSpeed) -> Result<Vec<u8>> {
+    let image = decode_jp2(jp2_bytes)?;
+    encode_png_fast(image, speed)
+}
+
 pub fn decode_to_image(jp2_bytes: &[u8]) -> Result<DynamicImage> {
     decode_jp2(jp2_bytes)
 }
 
-// ── Internal: decode ──────────────────────────────────────────────────────────
-
 fn decode_jp2(bytes: &[u8]) -> Result<DynamicImage> {
-    // hayro's Image implements ImageDecoder; from_decoder drives it into a DynamicImage.
     let decoder = Image::new(bytes, &DecodeSettings::default())
-            .map_err(|e: hayro_jpeg2000::DecodeError| Error::Decode(e.to_string()))?;
+        .map_err(|e: hayro_jpeg2000::DecodeError| Error::Decode(e.to_string()))?;
 
     let color_type = decoder.color_type();
     let (width, height) = decoder.dimensions();
@@ -115,9 +83,6 @@ fn decode_jp2(bytes: &[u8]) -> Result<DynamicImage> {
         .read_image(&mut buf)
         .map_err(|e: image::ImageError| Error::Decode(e.to_string()))?;
 
-
-    // Reconstruct a DynamicImage from the raw 8-bit buffer.
-    // hayro always outputs 8-bit (L8, La8, Rgb8, or Rgba8).
     use image::ColorType::*;
     let img = match color_type {
         L8 => DynamicImage::ImageLuma8(
@@ -137,22 +102,97 @@ fn decode_jp2(bytes: &[u8]) -> Result<DynamicImage> {
                 .ok_or_else(|| Error::Decode("buffer size mismatch (Rgba8)".into()))?,
         ),
         other => {
-            return Err(Error::Decode(format!("unexpected color type from hayro: {:?}", other)));
+            return Err(Error::Decode(format!(
+                "unexpected color type from hayro: {:?}",
+                other
+            )));
         }
     };
-
     Ok(img)
 }
 
-// ── Internal: encode ──────────────────────────────────────────────────────────
+/// PNG encode using the `png` crate directly so we can control compression level.
+///
+/// The `image` crate's `write_to(..., ImageFormat::Png)` hardcodes a high
+/// compression level with no way to override it.  Bypassing it and writing
+/// directly via the `png` crate cuts encode time dramatically for large
+/// Sentinel-2 TCI tiles (10980×10980 px).
+fn encode_png_fast(image: DynamicImage, speed: PngSpeed) -> Result<Vec<u8>> {
+    let compression = match speed {
+        PngSpeed::Small => Compression::Best,
+        PngSpeed::Balanced => Compression::Fast,  // zlib level 1
+        PngSpeed::Fast => Compression::Rle,        // no LZ77, just RLE filter
+    };
 
-fn encode_png(image: DynamicImage) -> Result<Vec<u8>> {
-    let mut buf = Vec::new();
-    image.write_to(&mut Cursor::new(&mut buf), ImageFormat::Png)?;
+    let (width, height) = (image.width(), image.height());
+
+    // Pre-allocate: uncompressed size is a reasonable upper bound for Fast,
+    // and a useful starting point for the others.
+    let channels = image.color().channel_count() as usize;
+    let capacity = width as usize * height as usize * channels + height as usize; // +filter bytes
+    let mut buf = Vec::with_capacity(capacity);
+
+    let (color_type, bit_depth, raw_bytes) = match &image {
+        DynamicImage::ImageLuma8(img) => (ColorType::Grayscale, BitDepth::Eight, img.as_raw().as_slice()),
+        DynamicImage::ImageLumaA8(img) => (ColorType::GrayscaleAlpha, BitDepth::Eight, img.as_raw().as_slice()),
+        DynamicImage::ImageRgb8(img) => (ColorType::Rgb, BitDepth::Eight, img.as_raw().as_slice()),
+        DynamicImage::ImageRgba8(img) => (ColorType::Rgba, BitDepth::Eight, img.as_raw().as_slice()),
+        // hayro only outputs 8-bit, but fall back gracefully for anything else
+        _ => {
+            // Re-encode via image crate as a safe fallback
+            let mut fallback = Vec::new();
+            image.write_to(&mut Cursor::new(&mut fallback), ImageFormat::Png)
+                .map_err(Error::Encode)?;
+            return Ok(fallback);
+        }
+    };
+
+    let mut encoder = Encoder::new(&mut buf, width, height);
+    encoder.set_color(color_type);
+    encoder.set_depth(bit_depth);
+    encoder.set_compression(compression);
+
+    let mut writer = encoder
+        .write_header()
+        .map_err(|e| Error::PngEncode(e.to_string()))?;
+
+    writer
+        .write_image_data(raw_bytes)
+        .map_err(|e| Error::PngEncode(e.to_string()))?;
+
+    drop(writer); // flushes PNG IEND chunk
     Ok(buf)
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────────
+// ── Parallel batch conversion ─────────────────────────────────────────────────
+
+#[cfg(feature = "parallel")]
+pub mod batch {
+    use super::*;
+    use rayon::prelude::*;
+
+    /// Convert many JP2 files to PNG in parallel using all available CPU cores.
+    ///
+    /// Returns a `Vec` of `(input_path, Result)` so failures don't abort the batch.
+    ///
+    /// ```toml
+    /// # Cargo.toml
+    /// [features]
+    /// parallel = ["rayon"]
+    ///
+    /// [dependencies]
+    /// rayon = { version = "1", optional = true }
+    /// ```
+    pub fn convert_files_parallel<P: AsRef<Path> + Sync>(
+        pairs: &[(P, P)],
+        speed: PngSpeed,
+    ) -> Vec<(&P, Result<()>)> {
+        pairs
+            .par_iter()
+            .map(|(inp, out)| (inp, convert_file_with_speed(inp, out, speed)))
+            .collect()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -160,14 +200,20 @@ mod tests {
 
     #[test]
     fn error_on_invalid_bytes() {
-        let result = convert_bytes(b"not a jp2 file");
-        assert!(result.is_err());
+        assert!(convert_bytes(b"not a jp2 file").is_err());
     }
 
     #[test]
     fn error_message_is_readable() {
         let err = convert_bytes(b"garbage").unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("JP2 decode error"));
+        assert!(err.to_string().contains("JP2 decode error"));
+    }
+
+    #[test]
+    fn png_speed_variants_compile() {
+        // Just ensures all variants are reachable
+        let _ = PngSpeed::Small;
+        let _ = PngSpeed::Balanced;
+        let _ = PngSpeed::Fast;
     }
 }

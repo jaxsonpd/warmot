@@ -204,7 +204,7 @@ impl SortBy {
 // ── Scene / Asset types ───────────────────────────────────────────────────────
 
 /// A STAC scene item returned from a search.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Scene {
     /// STAC item ID (e.g. `S2B_MSIL2A_20250401T...`).
     pub id: String,
@@ -230,6 +230,18 @@ impl Scene {
             .as_object()
             .map(|o| o.keys().cloned().collect())
             .unwrap_or_default()
+    }
+}
+
+impl std::fmt::Debug for Scene {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Scene {{ id: {}, datetime: {}, cloud_cover: {} }}",
+            self.id,
+            self.datetime,
+            self.cloud_cover.map_or("N/A".to_string(), |c| format!("{:.1}%", c))
+        )
     }
 }
 
