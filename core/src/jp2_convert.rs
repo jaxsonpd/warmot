@@ -1,4 +1,8 @@
-//! [doc comments unchanged]
+//! JP2 Convert
+//!
+//! A module that allows for converting of raw JP2 files to pngs for display
+//!
+//! Supports several speed modes due to large size of JP2 files
 
 use hayro_jpeg2000::{DecodeSettings, Image};
 use image::{DynamicImage, ImageDecoder, ImageFormat};
@@ -20,7 +24,9 @@ pub enum Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// Quality/speed tradeoff for PNG encoding.
+/// Speed options for png generation
+///
+/// Faster generation increases file size
 #[derive(Debug, Clone, Copy, Default)]
 pub enum PngSpeed {
     /// Smallest file, slowest (default `image` crate behaviour).
@@ -32,30 +38,33 @@ pub enum PngSpeed {
     Fast,
 }
 
-pub fn convert_file(
-    input_path: impl AsRef<Path>,
-    output_path: impl AsRef<Path>,
-) -> Result<()> {
-    convert_file_with_speed(input_path, output_path, PngSpeed::default())
-}
+use std::time::Instant;
 
-pub fn convert_file_with_speed(
+/// Convert a jp2 file to png at a given speed
+pub fn convert_file(
     input_path: impl AsRef<Path>,
     output_path: impl AsRef<Path>,
     speed: PngSpeed,
 ) -> Result<()> {
+    let t0 = Instant::now();
+    
     let bytes = std::fs::read(input_path)?;
-    let png = convert_bytes_with_speed(&bytes, speed)?;
+    println!("read:    {:>8.2?}", t0.elapsed());
+
+    let t1 = Instant::now();
+    let png = convert_bytes(&bytes, speed)?;
+    println!("convert: {:>8.2?}", t1.elapsed());
+
+    let t2 = Instant::now();
     let output_path = output_path.as_ref();
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(output_path, png)?;
-    Ok(())
-}
+    println!("write:   {:>8.2?}", t2.elapsed());
 
-pub fn convert_bytes(jp2_bytes: &[u8]) -> Result<Vec<u8>> {
-    convert_bytes_with_speed(jp2_bytes, PngSpeed::default())
+    println!("total:   {:>8.2?}", t0.elapsed());
+    Ok(())
 }
 
 /// Convert JP2 bytes → PNG bytes with explicit speed control.
@@ -63,9 +72,10 @@ pub fn convert_bytes(jp2_bytes: &[u8]) -> Result<Vec<u8>> {
 /// ```rust,no_run
 /// let png = jp2_convert::convert_bytes_with_speed(&bytes, PngSpeed::Fast)?;
 /// ```
-pub fn convert_bytes_with_speed(jp2_bytes: &[u8], speed: PngSpeed) -> Result<Vec<u8>> {
+pub fn convert_bytes(jp2_bytes: &[u8], speed: PngSpeed) -> Result<Vec<u8>> {
+    println!("In convert bytes");
     let image = decode_jp2(jp2_bytes)?;
-    encode_png_fast(image, speed)
+    encode_png(image, speed)
 }
 
 pub fn decode_to_image(jp2_bytes: &[u8]) -> Result<DynamicImage> {
@@ -111,17 +121,12 @@ fn decode_jp2(bytes: &[u8]) -> Result<DynamicImage> {
     Ok(img)
 }
 
-/// PNG encode using the `png` crate directly so we can control compression level.
-///
-/// The `image` crate's `write_to(..., ImageFormat::Png)` hardcodes a high
-/// compression level with no way to override it.  Bypassing it and writing
-/// directly via the `png` crate cuts encode time dramatically for large
-/// Sentinel-2 TCI tiles (10980×10980 px).
-fn encode_png_fast(image: DynamicImage, speed: PngSpeed) -> Result<Vec<u8>> {
+/// Encode a png from a dynamic image and a speed
+fn encode_png(image: DynamicImage, speed: PngSpeed) -> Result<Vec<u8>> {
     let compression = match speed {
         PngSpeed::Small => Compression::Best,
-        PngSpeed::Balanced => Compression::Fast,  // zlib level 1
-        PngSpeed::Fast => Compression::Rle,        // no LZ77, just RLE filter
+        PngSpeed::Balanced => Compression::Default,
+        PngSpeed::Fast => Compression::Fast,  
     };
 
     let (width, height) = (image.width(), image.height());
@@ -133,15 +138,26 @@ fn encode_png_fast(image: DynamicImage, speed: PngSpeed) -> Result<Vec<u8>> {
     let mut buf = Vec::with_capacity(capacity);
 
     let (color_type, bit_depth, raw_bytes) = match &image {
-        DynamicImage::ImageLuma8(img) => (ColorType::Grayscale, BitDepth::Eight, img.as_raw().as_slice()),
-        DynamicImage::ImageLumaA8(img) => (ColorType::GrayscaleAlpha, BitDepth::Eight, img.as_raw().as_slice()),
+        DynamicImage::ImageLuma8(img) => (
+            ColorType::Grayscale,
+            BitDepth::Eight,
+            img.as_raw().as_slice(),
+        ),
+        DynamicImage::ImageLumaA8(img) => (
+            ColorType::GrayscaleAlpha,
+            BitDepth::Eight,
+            img.as_raw().as_slice(),
+        ),
         DynamicImage::ImageRgb8(img) => (ColorType::Rgb, BitDepth::Eight, img.as_raw().as_slice()),
-        DynamicImage::ImageRgba8(img) => (ColorType::Rgba, BitDepth::Eight, img.as_raw().as_slice()),
+        DynamicImage::ImageRgba8(img) => {
+            (ColorType::Rgba, BitDepth::Eight, img.as_raw().as_slice())
+        }
         // hayro only outputs 8-bit, but fall back gracefully for anything else
         _ => {
             // Re-encode via image crate as a safe fallback
             let mut fallback = Vec::new();
-            image.write_to(&mut Cursor::new(&mut fallback), ImageFormat::Png)
+            image
+                .write_to(&mut Cursor::new(&mut fallback), ImageFormat::Png)
                 .map_err(Error::Encode)?;
             return Ok(fallback);
         }
@@ -189,7 +205,7 @@ pub mod batch {
     ) -> Vec<(&P, Result<()>)> {
         pairs
             .par_iter()
-            .map(|(inp, out)| (inp, convert_file_with_speed(inp, out, speed)))
+            .map(|(inp, out)| (inp, convert_file(inp, out, speed)))
             .collect()
     }
 }
@@ -200,12 +216,12 @@ mod tests {
 
     #[test]
     fn error_on_invalid_bytes() {
-        assert!(convert_bytes(b"not a jp2 file").is_err());
+        assert!(convert_bytes(b"not a jp2 file", PngSpeed::Balanced).is_err());
     }
 
     #[test]
     fn error_message_is_readable() {
-        let err = convert_bytes(b"garbage").unwrap_err();
+        let err = convert_bytes(b"garbage", PngSpeed::Balanced).unwrap_err();
         assert!(err.to_string().contains("JP2 decode error"));
     }
 

@@ -145,7 +145,7 @@ impl BoundingBox {
 
     /// Create a square bounding box centred on a point with a given half-width
     /// in degrees (e.g. `0.05` ≈ ~5 km at mid-latitudes).
-    pub fn around(lon: f64, lat: f64, delta: f64) -> Self {
+    pub fn around(lat: f64, lon: f64, delta: f64) -> Self {
         Self::new(lon - delta, lat - delta, lon + delta, lat + delta)
     }
 

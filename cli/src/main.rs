@@ -1,5 +1,5 @@
 use warmot::copernicus::{BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy};
-use warmot::jp2_convert::{convert_file, convert_bytes};
+use warmot::jp2_convert::{PngSpeed, convert_file };
 use std::env;
 
 #[tokio::main]
@@ -17,12 +17,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Authenticated ✓");
 
     // ── 2. search – optical (S2C MSIL2A) ─────────────────────────────────────
-    let wellington = BoundingBox::around(174.77, -41.29, 0.05);
+    let search_box = BoundingBox::around(-21.102504, -175.187077, 0.05);
 
     let optical_scenes = client
         .search(SearchParams {
             collection: CollectionType::Sentinel2L2A,
-            bbox: wellington,
+            bbox: search_box,
             limit: 5,
             max_cloud_cover: Some(30.0),
             sort_by: SortBy::DateDescending,
@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // ── 4. save_jp2 ───────────────────────────────────────────────────────
             let saved_path = client.save_jp2(&asset, "output/").await?;
-            convert_file(&saved_path, format!("{}.png", saved_path))?;
+            convert_file(&saved_path, format!("{}.png", saved_path), PngSpeed::Fast)?;
             println!("Saved → {}", saved_path);
 
 
