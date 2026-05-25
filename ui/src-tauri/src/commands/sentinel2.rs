@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use tauri::State;
 use warmot::copernicus::{BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy};
-use warmot::jp2_convert::{convert_bytes, convert_bytes, PngSpeed};
+use warmot::jp2_convert::{convert_bytes, convert_file};
 
 use crate::state::AppState;
 
@@ -64,8 +64,7 @@ pub async fn fetch_sentinel2(
             .map_err(|e| e.to_string())?;
 
         log::debug!("Converting to png");
-        let png = convert_bytes(&asset.bytes, PngSpeed::Fast).map_err(|e| e.to_string())?;
-        let png_b64 = base64_encode(&png);
+        let png_b64 = convert_bytes(&asset.bytes).map_err(|e| e.to_string())?;
 
         results.push(S2Scene {
             id: scene.id.clone(),

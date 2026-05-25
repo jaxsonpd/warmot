@@ -24,8 +24,13 @@ thiserror            = "1"
 bytes                = "1"   
 dotenvy              = "0.15"
 hayro-jpeg2000       = { version = "0.3", features = ["image"] }
-image                = { version = "0.25", default-features = false, features = ["png"] }
-png                  = "0.17" 
+jpeg2k  = "0.8"
+image   = { version = "0.25", default-features = false }
+png     = "0.18"
+base64  = "0.22"
+
+[dev-dependencies]
+image = { version = "0.25", features = ["png"] }
 
 [features]
 default  = []
