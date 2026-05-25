@@ -1,22 +1,16 @@
-use serde::{Deserialize, Serialize};
-use std::env;
-use tauri::State;
-use warmot::copernicus::{BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy};
-use warmot::jp2_convert::{convert_bytes, convert_file};
+use tauri::{AppHandle, Emitter, State};
 
-use crate::state::AppState;
-
-#[derive(Serialize)]
-pub struct S2Scene {
-    pub id: String,
-    pub datetime: String,
-    pub cloud_cover: f64,
-    /// Base64-encoded PNG bytes
-    pub png_b64: String,
+#[derive(Clone, Serialize)]
+struct ProgressPayload {
+    step: &'static str,
+    current: usize,
+    total: usize,
+    scene_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn fetch_sentinel2(
+    app: AppHandle,
     state: State<'_, AppState>,
     username: String,
     password: String,
@@ -25,21 +19,20 @@ pub async fn fetch_sentinel2(
 ) -> Result<Vec<S2Scene>, String> {
     let query = state.query.lock().unwrap().clone();
 
-    log::info!("Searching sentinel2 using {:?}", query);
+    let emit = |step: &'static str, current: usize, total: usize, scene_id: Option<String>| {
+        let _ = app.emit("sentinel2-progress", ProgressPayload { step, current, total, scene_id });
+    };
+
+    emit("init", 0, 1, None);
 
     // ── 1. init ───────────────────────────────────────────────────────────────
-    let client = CopernicusClient::init(
-        &env::var("CDSE_USERNAME").unwrap(),
-        &env::var("CDSE_PASSWORD").unwrap(),
-        &env::var("CDSE_S3_ACCESS").unwrap(),
-        &env::var("CDSE_S3_SECRET").unwrap(),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
+    let client = CopernicusClient::init(&username, &password, &s3_access, &s3_secret)
+        .await
+        .map_err(|e| e.to_string())?;
 
-    let bbox = BoundingBox::around(query.lon, query.lat, query.radius_deg);
+    let bbox = BoundingBox::around(query.lat, query.lon, query.radius_deg);
 
-    log::debug!("Searching for BoundingBox {:?}", bbox);
+    emit("searching", 0, 1, None);
 
     let scenes = client
         .search(SearchParams {
@@ -52,18 +45,19 @@ pub async fn fetch_sentinel2(
         .await
         .map_err(|e| e.to_string())?;
 
-    log::debug!("Found scenes {:?}", scenes);
-
+    let total = scenes.len();
     let mut results = Vec::new();
 
-    for scene in &scenes {
-        log::debug!("Fetching {:?}", scene);
+    for (i, scene) in scenes.iter().enumerate() {
+        emit("downloading", i, total, Some(scene.id.clone()));
+
         let asset = client
             .get_image_fallback(scene, &["TCI_10m", "TCI", "visual"])
             .await
             .map_err(|e| e.to_string())?;
 
-        log::debug!("Converting to png");
+        emit("converting", i, total, Some(scene.id.clone()));
+
         let png_b64 = convert_bytes(&asset.bytes).map_err(|e| e.to_string())?;
 
         results.push(S2Scene {
@@ -72,15 +66,10 @@ pub async fn fetch_sentinel2(
             cloud_cover: scene.cloud_cover.unwrap_or(-1.0),
             png_b64,
         });
+
+        emit("done_scene", i + 1, total, Some(scene.id.clone()));
     }
 
+    emit("complete", total, total, None);
     Ok(results)
-}
-
-fn base64_encode(data: &[u8]) -> String {
-    use std::io::Write;
-    // Use the `base64` crate or roll a simple encode.
-    // Add `base64 = "0.22"` to Cargo.toml.
-    use base64::Engine;
-    base64::engine::general_purpose::STANDARD.encode(data)
 }
