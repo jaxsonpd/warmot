@@ -31,7 +31,8 @@
 //!
 //!     if let Some(scene) = scenes.first() {
 //!         let asset = client.get_image(scene, "TCI_10m").await?;
-//!         client.save_jp2(&asset, "output/scene.jp2").await?;
+//!         // Convert JP2 bytes to a PNG data URL for display in a Tauri frontend
+//!         let png_data_url = asset.to_png_data_url()?;
 //!     }
 //!
 //!     Ok(())
@@ -46,6 +47,7 @@ use reqwest::Client as HttpClient;
 use serde::Deserialize;
 use serde_json::Value;
 use std::path::Path;
+use crate::jp2_convert;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +84,12 @@ pub enum Error {
 
     #[error("No scenes returned from STAC")]
     NoScenes,
+
+    #[error("JP2 conversion error: {0}")]
+    Jp2Conversion(String),
+
+    #[error("STAC response missing 'features' array: {0}")]
+    InvalidResponse(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -255,6 +263,37 @@ pub struct ImageAsset {
     pub bytes: bytes::Bytes,
 }
 
+impl ImageAsset {
+    /// Decode the JP2 bytes and return a PNG data URL.
+    ///
+    /// The returned string is a `data:image/png;base64,...` URL suitable for
+    /// use directly as the `src` attribute of an `<img>` element in the Tauri
+    /// frontend.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Jp2Conversion`] if the bytes cannot be decoded as a
+    /// JPEG 2000 image or PNG encoding fails.
+    pub fn to_png_data_url(&self) -> Result<String> {
+        jp2_convert::convert_bytes(&self.bytes)
+            .map_err(|e: Box<dyn std::error::Error>| Error::Jp2Conversion(e.to_string()))
+    }
+
+    /// Decode the JP2 bytes and save a PNG file alongside a given path.
+    ///
+    /// Writes a `.png` file adjacent to `path`, e.g. passing
+    /// `"output/scene.jp2"` writes `"output/scene.png"`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error::Jp2Conversion`] if decoding or encoding fails, or
+    /// [`Error::Io`] if the file cannot be written.
+    pub fn save_png(&self, path: &Path) -> Result<()> {
+        jp2_convert::convert_file(path)
+            .map_err(|e: Box<dyn std::error::Error>| Error::Jp2Conversion(e.to_string()))
+    }
+}
+
 // ── Auth response ─────────────────────────────────────────────────────────────
 
 #[derive(Deserialize, Debug)]
@@ -308,9 +347,9 @@ impl CopernicusClient {
     /// # use copernicus::*;
     /// # async fn run(client: CopernicusClient) -> Result<()> {
     /// let scenes = client.search(SearchParams {
-    ///     collection: CollectionType::Sentinel1Grd,   // SAR radar
+    ///     collection: CollectionType::Sentinel1Grd,
     ///     bbox: BoundingBox::around(174.77, -41.29, 0.05),
-    ///     max_cloud_cover: None,                       // not relevant for radar
+    ///     max_cloud_cover: None,
     ///     ..Default::default()
     /// }).await?;
     /// # Ok(()) }
@@ -346,7 +385,9 @@ impl CopernicusClient {
 
         let features = match json["features"].as_array() {
             None => {
-                return Err(Error::Json(serde_json::from_str::<Value>("null").unwrap_err()));
+                return Err(Error::InvalidResponse(
+                    json.to_string()
+                ));
             }
             Some(f) => f,
         };
@@ -371,25 +412,22 @@ impl CopernicusClient {
     /// - `"B04_10m"`, `"B08_10m"` – individual bands
     /// - `"measurement/vv"` – Sentinel-1 polarisation
     ///
-    /// If you pass multiple fallback keys (comma-separated), the first
-    /// one present in the scene's assets will be used.
-    ///
     /// Use [`Scene::asset_keys`] to inspect what is available.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// # use copernicus::*;
-    /// # async fn run(client: CopernicusClient, scene: Scene) -> Result<()> {
-    /// // Try TCI_10m first, then TCI, then visual
-    /// let asset = client.get_image_fallback(&scene, &["TCI_10m", "TCI", "visual"]).await?;
-    /// # Ok(()) }
-    /// ```
     pub async fn get_image(&self, scene: &Scene, asset_key: &str) -> Result<ImageAsset> {
         self.get_image_fallback(scene, &[asset_key]).await
     }
 
     /// Like [`get_image`](Self::get_image) but tries each key in order,
     /// returning the first one that exists in the scene's assets.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// # use copernicus::*;
+    /// # async fn run(client: CopernicusClient, scene: Scene) -> Result<()> {
+    /// let asset = client.get_image_fallback(&scene, &["TCI_10m", "TCI", "visual"]).await?;
+    /// let png_data_url = asset.to_png_data_url()?;
+    /// # Ok(()) }
+    /// ```
     pub async fn get_image_fallback(
         &self,
         scene: &Scene,
@@ -440,7 +478,7 @@ impl CopernicusClient {
     /// Any missing parent directories are created automatically.
     ///
     /// If `path` ends in `/` or is a directory, a filename is derived from
-    /// the scene ID and acquisition date.  Otherwise the path is used as-is.
+    /// the scene ID and acquisition date. Otherwise the path is used as-is.
     ///
     /// # Example
     /// ```rust,no_run
@@ -454,9 +492,7 @@ impl CopernicusClient {
     pub async fn save_jp2(&self, asset: &ImageAsset, path: impl AsRef<Path>) -> Result<String> {
         let path = path.as_ref();
 
-        // If path is a directory (or ends with /), auto-generate filename
         let final_path = if path.is_dir() || path.to_string_lossy().ends_with('/') {
-            // Derive a safe filename from the S3 key (last component) and scene ID
             let filename = Path::new(&asset.key)
                 .file_name()
                 .and_then(|f| f.to_str())
@@ -467,14 +503,12 @@ impl CopernicusClient {
             path.to_path_buf()
         };
 
-        // Ensure the extension is .jp2
         let final_path = if final_path.extension().is_none() {
             final_path.with_extension("jp2")
         } else {
             final_path
         };
 
-        // Create parent dirs
         if let Some(parent) = final_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }

@@ -1,6 +1,7 @@
 use warmot::copernicus::{BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy};
-use warmot::jp2_convert::{PngSpeed, convert_file };
+use warmot::jp2_convert::{convert_file };
 use std::env;
+use std::path::Path;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -52,7 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // ── 4. save_jp2 ───────────────────────────────────────────────────────
             let saved_path = client.save_jp2(&asset, "output/").await?;
-            convert_file(&saved_path, format!("{}.png", saved_path), PngSpeed::Fast)?;
+            convert_file(Path::new(&saved_path))?;
             println!("Saved → {}", saved_path);
 
 
