@@ -1,7 +1,7 @@
-use warmot::copernicus::{BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy};
-use warmot::jp2_convert::{convert_file };
 use std::env;
 use std::path::Path;
+use warmot::copernicus::{BoundingBox, CollectionType, CopernicusClient, SearchParams, SortBy};
+use warmot::jp2_convert::convert_file;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,7 +15,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         &env::var("CDSE_S3_SECRET")?,
     )
     .await?;
-    println!("Authenticated ✓");
+    println!("Authenticated as {}", client.get_username());
 
     // ── 2. search – optical (S2C MSIL2A) ─────────────────────────────────────
     let search_box = BoundingBox::around(-21.102504, -175.187077, 0.05);
@@ -55,7 +55,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let saved_path = client.save_jp2(&asset, "output/").await?;
             convert_file(Path::new(&saved_path))?;
             println!("Saved → {}", saved_path);
-
 
             // Or with an explicit path:
             // let saved_path = client.save_jp2(&asset, "output/wellington_tci.jp2").await?;

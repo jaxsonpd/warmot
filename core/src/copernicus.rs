@@ -312,6 +312,7 @@ struct TokenResponse {
 pub struct CopernicusClient {
     http: HttpClient,
     s3: S3Client,
+    username: String,
     /// The current bearer token (refreshed on [`init`](Self::init)).
     pub token: String,
 }
@@ -333,7 +334,14 @@ impl CopernicusClient {
         let token = Self::fetch_token(&http, username, password).await?;
         let s3 = Self::build_s3_client(s3_access_key, s3_secret_key);
 
-        Ok(Self { http, s3, token })
+        Ok(Self { http, s3, username: username.to_string(), token })
+    }
+
+    /// Get the username used to auth with copernicus
+    /// 
+    /// returns a string of the username you are currently logged in as
+    pub fn get_username(&self) -> &str {
+        &self.username
     }
 
     // ── search ────────────────────────────────────────────────────────────────
