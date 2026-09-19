@@ -1,160 +1,282 @@
-<script setup lang="ts">
-import { ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
+<script setup>
+import { ref } from 'vue'
+import { useTheme } from './composables/useTheme.js'
+import MapView from './components/MapView.vue'
 
-const greetMsg = ref("");
-const name = ref("");
+// Everything lives inline in this file for now. As we build MenuBar.vue,
+// TabBar.vue, ControlBar.vue, MapPanel.vue and DataPanel.vue, each one
+// will lift a section out of here (and out of this file's <style>) — the
+// markup and classes are written so that move is a straight cut-and-paste.
 
-async function greet() {
-  // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-  greetMsg.value = await invoke("greet", { name: name.value });
+const { theme, toggleTheme } = useTheme()
+
+const activeTab = ref('map')
+const coordinates = ref('')
+const startDate = ref('')
+const endDate = ref('')
+const layer = ref('optical')
+
+function showAbout() {
+  window.alert('warmot — a viewer for Copernicus satellite imagery.')
 }
 </script>
 
 <template>
-  <main class="container">
-    <h1>Welcome to Tauri + Vue</h1>
+  <div class="app">
+    <!-- will become MenuBar.vue -->
+    <header class="menu-bar">
+      <nav class="menu-items">
+        <button class="menu-item" type="button">File</button>
+        <button class="menu-item" type="button" @click="showAbout">About</button>
+      </nav>
+      <button
+        class="theme-toggle"
+        type="button"
+        :aria-label="theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'"
+        @click="toggleTheme"
+      >
+        {{ theme === 'dark' ? '☾' : '☀' }}
+      </button>
+    </header>
 
-    <div class="row">
-      <a href="https://vite.dev" target="_blank">
-        <img src="/vite.svg" class="logo vite" alt="Vite logo" />
-      </a>
-      <a href="https://tauri.app" target="_blank">
-        <img src="/tauri.svg" class="logo tauri" alt="Tauri logo" />
-      </a>
-      <a href="https://vuejs.org/" target="_blank">
-        <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
-      </a>
+    <!-- will become TabBar.vue -->
+    <nav class="tab-bar">
+      <button
+        type="button"
+        class="tab"
+        :class="{ active: activeTab === 'map' }"
+        @click="activeTab = 'map'"
+      >
+        Map
+      </button>
+      <button
+        type="button"
+        class="tab"
+        :class="{ active: activeTab === 'data' }"
+        @click="activeTab = 'data'"
+      >
+        Data
+      </button>
+    </nav>
+
+    <!-- will become ControlBar.vue -->
+    <div class="control-bar">
+      <label v-if="activeTab !== 'map'" class="field">
+        <span class="field-label">Coordinates</span>
+        <input v-model="coordinates" type="text" class="field-input mono" placeholder="lat, lon" />
+      </label>
+
+      <div class="field">
+        <span class="field-label">Dates</span>
+        <div class="date-range">
+          <input v-model="startDate" type="date" class="field-input mono" />
+          <span class="date-sep">–</span>
+          <input v-model="endDate" type="date" class="field-input mono" />
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Layer</span>
+        <div class="segmented" role="radiogroup" aria-label="Imagery layer">
+          <button
+            type="button"
+            class="segment"
+            :class="{ active: layer === 'optical' }"
+            @click="layer = 'optical'"
+          >
+            Sat image
+          </button>
+          <button
+            type="button"
+            class="segment"
+            :class="{ active: layer === 'radar' }"
+            @click="layer = 'radar'"
+          >
+            Radar
+          </button>
+        </div>
+      </div>
     </div>
-    <p>Click on the Tauri, Vite, and Vue logos to learn more.</p>
 
-    <form class="row" @submit.prevent="greet">
-      <input id="greet-input" v-model="name" placeholder="Enter a name..." />
-      <button type="submit">Greet</button>
-    </form>
-    <p>{{ greetMsg }}</p>
-  </main>
+    <!-- will become MapPanel.vue / DataPanel.vue -->
+    <section class="panel">
+      <div class="viewport" :class="{ 'viewport--map': activeTab === 'map' }">
+        <MapView v-show="activeTab === 'map'" v-model:coordinates="coordinates" :active="activeTab === 'map'" />
+        <p v-show="activeTab !== 'map'" class="placeholder">
+          Data view — results for {{ coordinates || 'no coordinates yet' }} ·
+          {{ layer === 'radar' ? 'Sentinel-1' : 'Sentinel-2' }} ·
+          {{ startDate || '—' }} to {{ endDate || '—' }}
+        </p>
+      </div>
+    </section>
+  </div>
 </template>
 
 <style scoped>
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #249b73);
-}
-
-</style>
-<style>
-:root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
-
-  color: #0f0f0f;
-  background-color: #f6f6f6;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
-}
-
-.container {
-  margin: 0;
-  padding-top: 10vh;
+.app {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  height: 100vh;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
-}
-
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
-}
-
-.row {
+/* menu bar */
+.menu-bar {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 var(--space-2);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.menu-items {
+  display: flex;
+  gap: var(--space-1);
+}
+.menu-item {
+  background: none;
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+.menu-item:hover {
+  background: var(--surface-raised);
+}
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  color: var(--text);
+}
+.theme-toggle:hover {
+  background: var(--surface-raised);
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+/* tab bar */
+.tab-bar {
+  display: flex;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tab {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius) var(--radius) 0 0;
+  padding: var(--space-2) var(--space-4);
+  color: var(--text-muted);
+  transform: translateY(1px);
+}
+.tab.active {
+  color: var(--text);
+  background: var(--surface-raised);
+  border-color: var(--accent);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
 
-a:hover {
-  color: #535bf2;
+/* control bar */
+.control-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.field-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.field-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-1) var(--space-2);
+  color: var(--text);
+  min-width: 150px;
+}
+.field-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.date-range .field-input {
+  min-width: 130px;
+}
+.date-sep {
+  color: var(--text-muted);
+}
+.segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.segment {
+  background: var(--bg);
+  border: none;
+  border-right: 1px solid var(--border);
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-muted);
+}
+.segment:last-child {
+  border-right: none;
+}
+.segment.active {
+  background: var(--accent-dim);
+  color: var(--accent);
 }
 
-h1 {
+/* panel / viewport */
+.panel {
+  flex: 1;
+  padding: var(--space-3);
+  overflow: auto;
+  min-height: 0;
+}
+.viewport {
+  height: 100%;
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
+  overflow: hidden;
 }
-
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
+.viewport--map {
+  display: block;
 }
-
-button {
-  cursor: pointer;
+.placeholder {
+  max-width: 40ch;
+  color: var(--text-muted);
+  padding: var(--space-4);
+  line-height: 1.8;
 }
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
 </style>
